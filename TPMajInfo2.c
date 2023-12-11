@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <netdb.h>  // for getaddrinfo
+#include <sys/socket.h>
 
 // Constants
 #define MAX_MESSAGE_LENGTH 100
@@ -28,6 +29,16 @@ void downloadFile(const char *server, const char *file) {
         perror("getaddrinfo");
         exit(EXIT_FAILURE);
     }
+
+    // Create a socket
+    int sockfd = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol);
+    if (sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Use sockfd to communicate with the server...
+
     freeaddrinfo(serverInfo);
 
     char message[MAX_MESSAGE_LENGTH];
@@ -47,6 +58,16 @@ void uploadFile(const char *server, const char *file) {
         perror("getaddrinfo");
         exit(EXIT_FAILURE);
     }
+
+    //Reserved socket
+    int sockfd = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol);
+    if (sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Use sockfd to communicate with the server...
+
     freeaddrinfo(serverInfo);
 
     char message[MAX_MESSAGE_LENGTH];
