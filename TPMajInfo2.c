@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <netdb.h>  // for getaddrinfo
 
 // Constants
 #define MAX_MESSAGE_LENGTH 100
@@ -17,6 +18,18 @@ void display(char *message) {
 
 // Function to handle downloading a file from the server
 void downloadFile(const char *server, const char *file) {
+    // Get the address information for the server
+    struct addrinfo hints, *serverInfo;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if (getaddrinfo(server, "tftp", &hints, &serverInfo) != 0) {
+        perror("getaddrinfo");
+        exit(EXIT_FAILURE);
+    }
+    freeaddrinfo(serverInfo);
+
     char message[MAX_MESSAGE_LENGTH];
     snprintf(message, sizeof(message), DOWNLOAD_MESSAGE, file, server);
     display(message);
@@ -24,6 +37,18 @@ void downloadFile(const char *server, const char *file) {
 
 // Function to handle uploading a file to the server
 void uploadFile(const char *server, const char *file) {
+    // Get the address information for the server
+    struct addrinfo hints, *serverInfo;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if (getaddrinfo(server, "tftp", &hints, &serverInfo) != 0) {
+        perror("getaddrinfo");
+        exit(EXIT_FAILURE);
+    }
+    freeaddrinfo(serverInfo);
+
     char message[MAX_MESSAGE_LENGTH];
     snprintf(message, sizeof(message), UPLOAD_MESSAGE, file, server);
     display(message);
