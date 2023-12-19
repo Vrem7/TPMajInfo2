@@ -12,10 +12,11 @@
 #define MAX_MESSAGE_LENGTH 100
 #define MAX_DATA_SIZE 512
 #define RRQ_OPCODE 1
+#define WRQ_OPCODE 2
 #define DATA_OPCODE 3
 #define ACK_OPCODE 4
 #define ERROR_OPCODE 5
-#define USAGE_MESSAGE "Usage: %s server file\nCommand can only be gettftp or puttftp\n"
+#define USAGE_MESSAGE "Usage: %s server file\n"
 #define UNKNOWN_COMMAND_MESSAGE "Unknown command\n"
 #define DOWNLOAD_MESSAGE "Downloading file '%s' from server '%s'\n"
 #define UPLOAD_MESSAGE "Uploading file '%s' to server '%s'\n"
@@ -26,10 +27,10 @@ void display(const char *message) {
     write(STDOUT_FILENO, message, strlen(message));
 }
 
-// Function to construct a RRQ packet
-int constructRRQ(char *buffer, const char *filename) {
+// Function to construct a request packet (RRQ or WRQ)
+int constructRequest(char *buffer, const char *filename, short opcode) {
     char *p = buffer;
-    *(short *)p = htons(RRQ_OPCODE);
+    *(short *)p = htons(opcode);
     p += 2;
     strcpy(p, filename);
     p += strlen(filename) + 1;
@@ -61,7 +62,7 @@ void downloadFile(const char *server, const char *file) {
 
     // Construct RRQ packet
     char buffer[MAX_DATA_SIZE];
-    int packetSize = constructRRQ(buffer, file);
+    int packetSize = constructRequest(buffer, file, RRQ_OPCODE);
 
     // Use sockfd to send the RRQ packet to the server...
     if (sendto(sockfd, buffer, packetSize, 0, serverInfo->ai_addr, serverInfo->ai_addrlen) == -1) {
@@ -77,40 +78,46 @@ void downloadFile(const char *server, const char *file) {
     }
 
     // Inside the loop where you process data packets
-    int blockNumber = 1;
-    while (1) {
-        // Receive the data packet
-        socklen_t server_len = sizeof(struct sockaddr);
-        int receivedBytes = recvfrom(sockfd, buffer, MAX_DATA_SIZE + 4, 0, serverInfo->ai_addr, &server_len);
-        if (receivedBytes == -1) {
-            perror("recvfrom");
-            exit(EXIT_FAILURE);
-        }
+int blockNumber = 1;
+while (1) {
+    // Build the DATA packet
+    *(short *)buffer = htons(DATA_OPCODE);
+    *(short *)(buffer + 2) = htons(blockNumber);
 
-        short opcode = ntohs(*(short *)buffer);
+    // Read data from the file
+    int bytesRead = fread(buffer + 4, 1, MAX_DATA_SIZE, filePtr);
 
-        if (opcode == ERROR_OPCODE) {
-            fprintf(stderr, "Received error packet with code %d: %s\n", ntohs(*(short *)(buffer + 2)), buffer + 4);
-            exit(EXIT_FAILURE);
-        } else if (opcode == DATA_OPCODE) {
-            // Write data to the file
-            fwrite(buffer + 4, 1, receivedBytes - 4, filePtr);
-
-            // Send ACK
-            *(short *)buffer = htons(ACK_OPCODE);
-            *(short *)(buffer + 2) = htons(blockNumber);
-            if (sendto(sockfd, buffer, 4, 0, serverInfo->ai_addr, server_len) == -1) {
-                perror("sendto");
-                exit(EXIT_FAILURE);
-            }
-            blockNumber++;
-        }
-
-        // Check if it's the last data packet
-        if (receivedBytes < MAX_DATA_SIZE + 4) {
-            break;
-        }
+    // Use sockfd to send the DATA packet to the server...
+    if (sendto(sockfd, buffer, bytesRead + 4, 0, serverInfo->ai_addr, serverInfo->ai_addrlen) == -1) {
+        perror("sendto");
+        exit(EXIT_FAILURE);
     }
+
+    // Receive the ACK
+    socklen_t server_len = sizeof(struct sockaddr);
+    int receivedBytes = recvfrom(sockfd, buffer, MAX_DATA_SIZE + 4, 0, serverInfo->ai_addr, &server_len);
+    if (receivedBytes == -1) {
+        perror("recvfrom");
+        exit(EXIT_FAILURE);
+    }
+
+    short opcode = ntohs(*(short *)buffer);
+    if (opcode != ACK_OPCODE || ntohs(*(short *)(buffer + 2)) != blockNumber) {
+        fprintf(stderr, "Invalid ACK received during upload\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Write data to the file
+    fwrite(buffer + 4, 1, bytesRead, filePtr);
+
+    // Move to the next block
+    blockNumber++;
+
+    // Check if it's the last data packet
+    if (bytesRead < MAX_DATA_SIZE) {
+        break;
+    }
+}
 
     // Close the file
     fclose(filePtr);
@@ -144,14 +151,71 @@ void uploadFile(const char *server, const char *file) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
-    
-    // Use sockfd to communicate with the server...
+
+    // Construct WRQ packet
+    char buffer[MAX_DATA_SIZE];
+    int packetSize = constructRequest(buffer, file, WRQ_OPCODE);
+
+    // Use sockfd to send the WRQ packet to the server...
+    if (sendto(sockfd, buffer, packetSize, 0, serverInfo->ai_addr, serverInfo->ai_addrlen) == -1) {
+        perror("sendto");
+        exit(EXIT_FAILURE);
+    }
+
+    // Open the file on the server for writing in binary mode
+    FILE *filePtr = fopen(file, "wb");
+    if (filePtr == NULL) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+
+    // Inside the loop where you process data packets
+    int blockNumber = 1;
+    while (1) {
+        // Receive the data packet
+        socklen_t server_len = sizeof(struct sockaddr);
+        int receivedBytes = recvfrom(sockfd, buffer, MAX_DATA_SIZE + 4, 0, serverInfo->ai_addr, &server_len);
+        if (receivedBytes == -1) {
+            perror("recvfrom");
+            exit(EXIT_FAILURE);
+        }
+
+        short opcode = ntohs(*(short *)buffer);
+
+        if (opcode == ERROR_OPCODE) {
+            fprintf(stderr, "Received error packet with code %d: %s\n", ntohs(*(short *)(buffer + 2)), buffer + 4);
+            exit(EXIT_FAILURE);
+        } else if (opcode == DATA_OPCODE) {
+            // Write data to the file on the server
+            fwrite(buffer + 4, 1, receivedBytes - 4, filePtr);
+
+            // Send ACK
+            *(short *)buffer = htons(ACK_OPCODE);
+            *(short *)(buffer + 2) = htons(blockNumber);
+            if (sendto(sockfd, buffer, 4, 0, serverInfo->ai_addr, server_len) == -1) {
+                perror("sendto");
+                exit(EXIT_FAILURE);
+            }
+            blockNumber++;
+        }
+
+        // Check if it's the last data packet
+        if (receivedBytes < MAX_DATA_SIZE + 4) {
+            break;
+        }
+    }
+
+    // Close the file on the server
+    fclose(filePtr);
 
     freeaddrinfo(serverInfo);
 
     char message[MAX_MESSAGE_LENGTH];
     snprintf(message, sizeof(message), UPLOAD_MESSAGE, file, server);
     display(message);
+
+    // Close the socket
+    close(sockfd);
 }
 
 int main(int argc, char *argv[]) {
