@@ -35,11 +35,9 @@ The `getaddrinfo` function is used to obtain the server's address based on the p
 A connection socket to the server is created using the socket function.
 
 ### 3.4 Downloading a File (gettftp)
-a) The client builds a properly formed Read Request (RRQ) packet and sends it to the server.
-
-b) For single Data (DAT) packet files, the client receives the file along with its acknowledgment (ACK).
-
-c) For multiple Data (DAT) packet files, the client receives each data packet and sends the respective acknowledgment (ACK).
+-a) The client builds a properly formed Read Request (RRQ) packet and sends it to the server.
+-b) For single Data (DAT) packet files, the client receives the file along with its acknowledgment (ACK).
+-c) For multiple Data (DAT) packet files, the client receives each data packet and sends the respective acknowledgment (ACK).
 
 ![Q4](Q4.png)
 
