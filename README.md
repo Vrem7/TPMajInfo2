@@ -25,6 +25,7 @@ We compile the code with different names for both programs:
    ```bash
    $ gcc -o gettftp TPMajInfo2.c
    $ gcc -o puttftp TPMajInfo2.c
+   ```
 
 ## 3. Features Implemented
 
